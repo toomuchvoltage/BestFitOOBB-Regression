@@ -19,4 +19,4 @@ https://jsfiddle.net/5ogvjzhq/
 
 # Known issues
 
-Some generated sets seem somewhat skewed while they shouldn't: as per the default settings they should be a perfect reflection. Have yet to fully investigate.
+Some generated sets seem somewhat skewed while they shouldn't be: as per the default settings they should be perfectly symmetric. Have yet to fully investigate.
