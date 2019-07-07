@@ -1,0 +1,277 @@
+<html>
+<head>
+	<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+<div id="tester" style="width:1000px;height:800px;"></div>
+<script>
+
+	function cross (x,y) {
+		return [x[1]*y[2] - x[2]*y[1],x[2]*y[0] - x[0]*y[2],x[0]*y[1] - x[1]*y[0]];
+	}
+	function dot (x,y) {
+		return x[0]*y[0] + x[1]*y[1] + x[2]*y[2];
+	}
+	function len (x) {
+		return Math.sqrt (x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
+	}
+	function normalize (x) {
+		var lx = len (x);
+		return [x[0]/lx,x[1]/lx,x[2]/lx];
+	}
+	function sub(x,y) {
+		return [x[0]-y[0],x[1]-y[1],x[2]-y[2]]
+	}
+	function flip(x) {
+		return [-x[0],-x[1],-x[2]];
+	}
+	function add(x,y) {
+		return [x[0]+y[0],x[1]+y[1],x[2]+y[2]]
+	}
+	function scale(x,y) {
+		return [x[0]*y,x[1]*y,x[2]*y];
+	}
+	function vec(x) {
+		return [x,x,x];
+	}
+	function sphericalToCartesian (phi,theta) {
+		return [Math.sin(phi) * Math.cos(theta), Math.cos(phi) * Math.cos(theta), Math.sin(theta)];
+	}
+	function reflect (inpPoint, inpNorm, inpPlanePt) {
+		return add (inpPoint, scale (inpNorm, -2.0 * dot(sub(inpPoint, inpPlanePt), inpNorm)));
+	}
+	function makePlaneEq (planeNorm, planePt) {
+		let D = -dot(planeNorm, planePt);
+
+		let planeEq = planeNorm[0]+'x';
+		if ( planeNorm[1] > 0.0 ) planeEq += '+';
+		planeEq += planeNorm[1]+'y';
+		if ( planeNorm[2] > 0.0 ) planeEq += '+';
+		planeEq += planeNorm[2]+'z';
+		if ( D > 0.0 ) planeEq += '+';
+		planeEq += D;
+		
+		return planeEq;
+	}
+
+	let secretPhi = Math.random() * (2.0 * Math.PI); // This defines the plane normal we wanna learn in spherical coordinates...
+	let secretTheta = ((Math.random() - 0.5) * 2.0) * (Math.PI * 0.5);
+	let secretNorm = sphericalToCartesian (secretPhi, secretTheta); // Same plane normal in cartesian coordinates...
+	let secretPlanePt = scale ([Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5], 10.0); // A point on our secret plane...
+	let secretAxis1 = normalize (cross (secretNorm, add(secretNorm, [Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5])));
+	let secretAxis2 = cross (secretNorm, secretAxis1);
+
+	TESTER = document.getElementById('tester');
+	
+	_X = [];
+	_Y = [];
+	_Z = [];
+	learningSet = [];
+	
+	let sampleCount = 100;
+	
+	for (let x = 0; x < sampleCount; x += 1.0) {
+		let randPt = add (add (add (secretPlanePt, scale(secretAxis1, Math.random() - 0.5)), scale(secretAxis2, Math.random() - 0.5)), scale (secretNorm, Math.random() * 0.4 - 0.2) );
+		mirrorOfPt = reflect (randPt, secretNorm, secretPlanePt);
+		learningSet.push (randPt); // We're going to learn the plane from this set...
+		learningSet.push (mirrorOfPt); // It's a mirrored set... add the point reflection
+		
+		_X.push (randPt[0]);
+		_Y.push (randPt[1]);
+		_Z.push (randPt[2]);
+		_X.push (mirrorOfPt[0]);
+		_Y.push (mirrorOfPt[1]);
+		_Z.push (mirrorOfPt[2]);
+	}
+	
+	Plotly.plot( TESTER, [{
+		x: _X,
+		y: _Y,
+		z: _Z,
+		type: 'scatter3d',
+		mode: 'markers',
+		marker: {
+			color: 'rgb(0, 127, 0)',
+			size: 12,
+			symbol: 'circle',
+			line: {
+				color: 'rgb(204, 204, 204)',
+				width: 1
+			},
+			opacity: 0.8
+		},
+	}], {
+		autosize: false,
+		width: 1000,
+		height: 800,
+		margin: {
+			l: 0,
+			r: 0,
+			b: 0,
+			t: 0
+		}
+	});
+
+	let centroid = [0.0, 0.0, 0.0];
+	for (dataPt in learningSet) {
+		centroid = add (centroid, learningSet[dataPt]);
+	}
+	centroid = scale (centroid, 1.0/learningSet.length); // Start from the centroid as a point on the plane...
+	let phi = Math.random() * (2.0 * Math.PI), theta = ((Math.random() - 0.5) * 2.0) * (Math.PI * 0.5); // Start with a random plane normal...
+	let finalNorm = sphericalToCartesian (phi, theta);
+	let deltaW = 0.001;
+	let invDeltaWx2 = 1.0 / (deltaW * 2.0);
+	let prevCost = 100000.0;
+	let factor = 0.1;
+	let strikes = 0.0;
+	
+	let normalizedSet = [];
+	for (dataPt in learningSet)
+		normalizedSet[dataPt] = sub(learningSet[dataPt], centroid);
+
+	for(;;)
+	{
+		let planeNorm1 = sphericalToCartesian (phi + deltaW, theta);
+
+		let cost1 = 0.0;
+		for (dataPt in normalizedSet)
+			cost1 += Math.abs(dot (normalizedSet[dataPt], planeNorm1));
+
+		let planeNorm2 = sphericalToCartesian (phi - deltaW, theta);
+
+		let cost2 = 0.0;
+		for (dataPt in normalizedSet)
+			cost2 += Math.abs(dot (normalizedSet[dataPt], planeNorm2));
+
+		let phiDelta = (cost1 - cost2) * invDeltaWx2;
+
+		planeNorm1 = sphericalToCartesian (phi, theta + deltaW);
+
+		cost1 = 0.0;
+		for (dataPt in normalizedSet)
+			cost1 += Math.abs(dot (normalizedSet[dataPt], planeNorm1));
+
+		planeNorm2 = sphericalToCartesian (phi, theta - deltaW);
+
+		cost2 = 0.0;
+		for (dataPt in normalizedSet)
+			cost2 += Math.abs(dot (normalizedSet[dataPt], planeNorm2));
+
+		let thetaDelta = (cost1 - cost2) * invDeltaWx2;
+
+		phi -= factor * phiDelta;
+		theta -= factor * thetaDelta;
+
+		finalNorm = sphericalToCartesian (phi, theta);
+
+		let curCost = 0.0;
+		for (dataPt in normalizedSet)
+			curCost += Math.abs(dot (normalizedSet[dataPt], finalNorm));
+
+		if (prevCost < curCost)
+		{
+			phi += factor * phiDelta;
+			theta += factor * thetaDelta;
+
+			finalNorm = sphericalToCartesian (phi, theta);
+			factor *= 0.5;
+		}
+		else
+		{
+			if (prevCost - curCost < 0.0001)
+				strikes += 1.0;
+			else
+				strikes = 0.0;
+		}
+		if (strikes > 3.0) break;
+
+		prevCost = curCost;
+	}
+
+	let finalAxis1 = normalize (cross (finalNorm, add(finalNorm, [Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5])));
+	let finalAxis2 = cross (finalNorm, finalAxis1);
+	
+	_PLANE_X = [];
+	_PLANE_Y = [];
+	_PLANE_Z = [];
+	_PLANE_TRI = [];
+
+	_PLANE_TRI.push (add (add (secretAxis1, secretAxis2), secretPlanePt));
+	_PLANE_TRI.push (add (add (secretAxis1, scale (secretAxis2, -1.0)), secretPlanePt));
+	_PLANE_TRI.push (add (add (scale (secretAxis1, -1.0), scale (secretAxis2, -1.0)), secretPlanePt));
+
+	_PLANE_TRI.push (add (add (secretAxis1, secretAxis2), secretPlanePt));
+	_PLANE_TRI.push (add (add (scale (secretAxis1, -1.0), secretAxis2), secretPlanePt));
+	_PLANE_TRI.push (add (add (scale (secretAxis1, -1.0), scale (secretAxis2, -1.0)), secretPlanePt));
+	
+	for (curPt in _PLANE_TRI) {
+		_PLANE_X.push (_PLANE_TRI[curPt][0]);
+		_PLANE_Y.push (_PLANE_TRI[curPt][1]);
+		_PLANE_Z.push (_PLANE_TRI[curPt][2]);
+	}
+	
+	Plotly.plot( TESTER, [{
+		x: _PLANE_X,
+		y: _PLANE_Y,
+		z: _PLANE_Z,
+		type: 'mesh3d',
+		opacity:0.8,
+		color:'rgb(100,100,300)',
+	}], {
+		autosize: false,
+		width: 1000,
+		height: 800,
+		margin: {
+			l: 0,
+			r: 0,
+			b: 0,
+			t: 0
+		}
+	});
+	
+	_PLANE_X = [];
+	_PLANE_Y = [];
+	_PLANE_Z = [];
+	_PLANE_TRI = [];
+
+	_PLANE_TRI.push (add (add (finalAxis1, finalAxis2), centroid));
+	_PLANE_TRI.push (add (add (finalAxis1, scale (finalAxis2, -1.0)), centroid));
+	_PLANE_TRI.push (add (add (scale (finalAxis1, -1.0), scale (finalAxis2, -1.0)), centroid));
+
+	_PLANE_TRI.push (add (add (finalAxis1, finalAxis2), centroid));
+	_PLANE_TRI.push (add (add (scale (finalAxis1, -1.0), finalAxis2), centroid));
+	_PLANE_TRI.push (add (add (scale (finalAxis1, -1.0), scale (finalAxis2, -1.0)), centroid));
+	
+	for (curPt in _PLANE_TRI) {
+		_PLANE_X.push (_PLANE_TRI[curPt][0]);
+		_PLANE_Y.push (_PLANE_TRI[curPt][1]);
+		_PLANE_Z.push (_PLANE_TRI[curPt][2]);
+	}
+	
+	Plotly.plot( TESTER, [{
+		x: _PLANE_X,
+		y: _PLANE_Y,
+		z: _PLANE_Z,
+		type: 'mesh3d',
+		opacity:0.8,
+		color:'rgb(300,100,200)',
+	}], {
+		autosize: false,
+		width: 1000,
+		height: 800,
+		margin: {
+			l: 0,
+			r: 0,
+			b: 0,
+			t: 0
+		}
+	});
+
+	if ( dot (secretNorm, finalNorm) < 0.0 ) finalNorm = scale (finalNorm, -1.0); // This is just to check the plane equations...
+	
+	console.log ('Actual: '+makePlaneEq (secretNorm, secretPlanePt));
+	console.log ('Learned: '+makePlaneEq (finalNorm, centroid));
+
+</script>
+</body>
+</html>
