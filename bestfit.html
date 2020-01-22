@@ -40,6 +40,22 @@
 	function reflect (inpPoint, inpNorm, inpPlanePt) {
 		return add (inpPoint, scale (inpNorm, -2.0 * dot(sub(inpPoint, inpPlanePt), inpNorm)));
 	}
+	function spin(axis, vec, angle)
+	{
+		let axis_n = normalize (axis);
+		let shadow = dot (axis_n, vec);
+		let bring_down = scale (axis_n, shadow);
+		let plane_pt = sub (vec, bring_down);
+
+		let X = normalize (plane_pt);
+		let Y = cross(axis_n, X);
+
+		let pt_x = dot (plane_pt, X);
+		let new_pt_x = Math.cos(angle) * pt_x;
+		let new_pt_y = Math.sin(angle) * pt_x;
+
+		return add (add (scale(X, new_pt_x), scale(Y,new_pt_y)), bring_down);
+	}
 	function makePlaneEq (planeNorm, planePt) {
 		let D = -dot(planeNorm, planePt);
 
@@ -70,8 +86,10 @@
 	
 	let sampleCount = 100;
 	
+	let scaleAxis1 = Math.random() * 0.5 + 0.5;
+	let scaleAxis2 = Math.random() * 0.5 + 0.5;
 	for (let x = 0; x < sampleCount; x += 1.0) {
-		let randPt = add (add (add (secretPlanePt, scale(secretAxis1, Math.random() - 0.5)), scale(secretAxis2, Math.random() - 0.5)), scale (secretNorm, Math.random() * 0.4 - 0.2) );
+		let randPt = add (add (add (secretPlanePt, scale(secretAxis1, (Math.random() - 0.5) * 2.0 * scaleAxis1)), scale(secretAxis2, (Math.random() - 0.5) * 2.0 * scaleAxis2)), scale (secretNorm, Math.random() * 0.4 - 0.2) );
 		mirrorOfPt = reflect (randPt, secretNorm, secretPlanePt);
 		learningSet.push (randPt); // We're going to learn the plane from this set...
 		learningSet.push (mirrorOfPt); // It's a mirrored set... add the point reflection
@@ -191,7 +209,109 @@
 	let finalAxis1 = normalize (cross (finalNorm, add(finalNorm, [Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5])));
 	let finalAxis2 = cross (finalNorm, finalAxis1);
 	
-	_PLANE_X = [];
+	prevCost = 100000.0;
+	factor = 0.5;
+	strikes = 0.0;
+	
+	let spinAngle = 0.0;
+	let curMaxX = -100000.0, curMaxY = -100000.0, curMaxZ = -100000.0;
+	let curMinX = 100000.0, curMinY = 100000.0, curMinZ = 100000.0;
+	
+	for(;;)
+	{
+		let finalAxis1Plus = spin (finalNorm, finalAxis1, spinAngle + deltaW);
+		let finalAxis2Plus = spin (finalNorm, finalAxis2, spinAngle + deltaW);
+
+		let maxX1 = -100000.0, maxY1 = -100000.0, maxZ1 = -100000.0;
+		let minX1 = 100000.0, minY1 = 100000.0, minZ1 = 100000.0;
+		for (dataPt in normalizedSet) {
+			let shadowX = dot (finalAxis1Plus, normalizedSet[dataPt]);
+			let shadowY = dot (finalAxis2Plus, normalizedSet[dataPt]);
+			let shadowZ = dot (finalNorm, normalizedSet[dataPt]);
+			maxX1 = Math.max (shadowX, maxX1);
+			maxY1 = Math.max (shadowY, maxY1);
+			maxZ1 = Math.max (shadowZ, maxZ1);
+			minX1 = Math.min (shadowX, minX1);
+			minY1 = Math.min (shadowY, minY1);
+			minZ1 = Math.min (shadowZ, minZ1);
+		}
+		let sideX1 = maxX1 - minX1;
+		let sideY1 = maxY1 - minY1;
+		let sideZ1 = maxZ1 - minZ1;
+		let cost1 = sideX1 * sideY1 * sideZ1;
+
+		let finalAxis1Minus = spin (finalNorm, finalAxis1, spinAngle - deltaW);
+		let finalAxis2Minus = spin (finalNorm, finalAxis2, spinAngle - deltaW);
+
+		let maxX2 = -100000.0, maxY2 = -100000.0, maxZ2 = -100000.0;
+		let minX2 = 100000.0, minY2 = 100000.0, minZ2 = 100000.0;
+		for (dataPt in normalizedSet) {
+			let shadowX = dot (finalAxis1Minus, normalizedSet[dataPt]);
+			let shadowY = dot (finalAxis2Minus, normalizedSet[dataPt]);
+			let shadowZ = dot (finalNorm, normalizedSet[dataPt]);
+			maxX2 = Math.max (shadowX, maxX2);
+			maxY2 = Math.max (shadowY, maxY2);
+			maxZ2 = Math.max (shadowZ, maxZ2);
+			minX2 = Math.min (shadowX, minX2);
+			minY2 = Math.min (shadowY, minY2);
+			minZ2 = Math.min (shadowZ, minZ2);
+		}
+		let sideX2 = maxX2 - minX2;
+		let sideY2 = maxY2 - minY2;
+		let sideZ2 = maxZ2 - minZ2;
+		let cost2 = sideX2 * sideY2 * sideZ2;
+
+		let angleDelta = (cost1 - cost2) * invDeltaWx2;
+
+		spinAngle -= factor * angleDelta;
+
+		finalNorm = sphericalToCartesian (phi, theta);
+
+		curMaxX = -100000.0; curMaxY = -100000.0; curMaxZ = -100000.0;
+		curMinX = 100000.0; curMinY = 100000.0; curMinZ = 100000.0;
+		for (dataPt in normalizedSet) {
+			let shadowX = dot (finalAxis1Minus, normalizedSet[dataPt]);
+			let shadowY = dot (finalAxis2Minus, normalizedSet[dataPt]);
+			let shadowZ = dot (finalNorm, normalizedSet[dataPt]);
+			curMaxX = Math.max (shadowX, curMaxX);
+			curMaxY = Math.max (shadowY, curMaxY);
+			curMaxZ = Math.max (shadowZ, curMaxZ);
+			curMinX = Math.min (shadowX, curMinX);
+			curMinY = Math.min (shadowY, curMinY);
+			curMinZ = Math.min (shadowZ, curMinZ);
+		}
+		let curSideX = curMaxX - curMinX;
+		let curSideY = curMaxY - curMinY;
+		let curSideZ = curMaxZ - curMinZ;
+		curCost = curSideX * curSideY * curSideZ;
+
+		if (prevCost < curCost)
+		{
+			spinAngle += factor * angleDelta;
+			factor *= 0.5;
+		}
+		else
+		{
+			if (prevCost - curCost < 0.1)
+				strikes += 1.0;
+			else
+				strikes = 0.0;
+		}
+		if (strikes > 3.0) break;
+
+		prevCost = curCost;
+	}
+	
+	finalAxis1 = spin (finalNorm, finalAxis1, spinAngle);
+	finalAxis2 = spin (finalNorm, finalAxis2, spinAngle);
+	let finalAxis1Plus = scale (finalAxis1, curMaxX);
+	let finalAxis1Minus = scale (finalAxis1, curMinX);
+	let finalAxis2Plus = scale (finalAxis2, curMaxY);
+	let finalAxis2Minus = scale (finalAxis2, curMinY);
+	let finalNormalPlus = scale (finalNorm, curMaxZ);
+	let finalNormalMinus = scale (finalNorm, curMinZ);
+	
+	/*_PLANE_X = [];
 	_PLANE_Y = [];
 	_PLANE_Z = [];
 	_PLANE_TRI = [];
@@ -227,45 +347,62 @@
 			b: 0,
 			t: 0
 		}
-	});
+	});*/
 	
-	_PLANE_X = [];
-	_PLANE_Y = [];
-	_PLANE_Z = [];
-	_PLANE_TRI = [];
+	for (let i = 0; i != 6; i++)
+	{
+		_PLANE_X = [];
+		_PLANE_Y = [];
+		_PLANE_Z = [];
+		_PLANE_TRI = [];
 
-	_PLANE_TRI.push (add (add (finalAxis1, finalAxis2), centroid));
-	_PLANE_TRI.push (add (add (finalAxis1, scale (finalAxis2, -1.0)), centroid));
-	_PLANE_TRI.push (add (add (scale (finalAxis1, -1.0), scale (finalAxis2, -1.0)), centroid));
-
-	_PLANE_TRI.push (add (add (finalAxis1, finalAxis2), centroid));
-	_PLANE_TRI.push (add (add (scale (finalAxis1, -1.0), finalAxis2), centroid));
-	_PLANE_TRI.push (add (add (scale (finalAxis1, -1.0), scale (finalAxis2, -1.0)), centroid));
-	
-	for (curPt in _PLANE_TRI) {
-		_PLANE_X.push (_PLANE_TRI[curPt][0]);
-		_PLANE_Y.push (_PLANE_TRI[curPt][1]);
-		_PLANE_Z.push (_PLANE_TRI[curPt][2]);
-	}
-	
-	Plotly.plot( TESTER, [{
-		x: _PLANE_X,
-		y: _PLANE_Y,
-		z: _PLANE_Z,
-		type: 'mesh3d',
-		opacity:0.8,
-		color:'rgb(300,100,200)',
-	}], {
-		autosize: false,
-		width: 1000,
-		height: 800,
-		margin: {
-			l: 0,
-			r: 0,
-			b: 0,
-			t: 0
+		if ( i == 0 || i == 1 )
+		{
+			_PLANE_TRI.push (add (add (add (finalAxis1Plus, finalAxis2Plus), i == 0 ? finalNormalPlus : finalNormalMinus), centroid));
+			_PLANE_TRI.push (add (add (add (finalAxis1Plus, finalAxis2Minus), i == 0 ? finalNormalPlus : finalNormalMinus), centroid));
+			_PLANE_TRI.push (add (add (add (finalAxis1Minus, finalAxis2Plus), i == 0 ? finalNormalPlus : finalNormalMinus), centroid));
+			_PLANE_TRI.push (add (add (add (finalAxis1Minus, finalAxis2Minus), i == 0 ? finalNormalPlus : finalNormalMinus), centroid));
 		}
-	});
+		else if ( i == 2 || i == 3 )
+		{
+			_PLANE_TRI.push (add (add (add (finalNormalPlus, finalAxis2Plus), i == 2 ? finalAxis1Plus : finalAxis1Minus), centroid));
+			_PLANE_TRI.push (add (add (add (finalNormalPlus, finalAxis2Minus), i == 2 ? finalAxis1Plus : finalAxis1Minus), centroid));
+			_PLANE_TRI.push (add (add (add (finalNormalMinus, finalAxis2Plus), i == 2 ? finalAxis1Plus : finalAxis1Minus), centroid));
+			_PLANE_TRI.push (add (add (add (finalNormalMinus, finalAxis2Minus), i == 2 ? finalAxis1Plus : finalAxis1Minus), centroid));
+		}
+		else
+		{
+			_PLANE_TRI.push (add (add (add (finalAxis1Plus, finalNormalPlus), i == 4 ? finalAxis2Plus : finalAxis2Minus), centroid));
+			_PLANE_TRI.push (add (add (add (finalAxis1Plus, finalNormalMinus), i == 4 ? finalAxis2Plus : finalAxis2Minus), centroid));
+			_PLANE_TRI.push (add (add (add (finalAxis1Minus, finalNormalPlus), i == 4 ? finalAxis2Plus : finalAxis2Minus), centroid));
+			_PLANE_TRI.push (add (add (add (finalAxis1Minus, finalNormalMinus), i == 4 ? finalAxis2Plus : finalAxis2Minus), centroid));
+		}
+		
+		for (curPt in _PLANE_TRI) {
+			_PLANE_X.push (_PLANE_TRI[curPt][0]);
+			_PLANE_Y.push (_PLANE_TRI[curPt][1]);
+			_PLANE_Z.push (_PLANE_TRI[curPt][2]);
+		}
+		
+		Plotly.plot( TESTER, [{
+			x: _PLANE_X,
+			y: _PLANE_Y,
+			z: _PLANE_Z,
+			type: 'mesh3d',
+			opacity:0.8,
+			color:'rgb(300,100,200)',
+		}], {
+			autosize: false,
+			width: 1000,
+			height: 800,
+			margin: {
+				l: 0,
+				r: 0,
+				b: 0,
+				t: 0
+			}
+		});
+	}
 
 	if ( dot (secretNorm, finalNorm) < 0.0 ) finalNorm = scale (finalNorm, -1.0); // This is just to check the plane equations...
 	
