@@ -14,4 +14,4 @@ Simply open the .HTML file and hit refresh for new data points.
 
 # Example
 
-https://jsfiddle.net/5ogvjzhq/
+https://jsfiddle.net/5j4wmt6n/
