@@ -5,7 +5,7 @@ This is a really simple way to do best fit OOBBs. It simply uses regression inst
 # Here's how it works:
 
 - First it computes the centroid and subtracts it from the data set. This is in preparation for finding the best fit plane.
-- Then it regresses a polar coordinate pair using gradient descent representing the best fit plane normal.
+- Then it regresses a spherical coordinate pair using gradient descent representing the best fit plane normal.
 - Once the best fit plane is found, it then generates and rotates a pair of principal axis (again using regression/gradient descent) until a minimal volume bounding box is found.
 
 # How to use
